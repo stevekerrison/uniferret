@@ -37,21 +37,29 @@ if [[ ! -e /config/data/system.properties ]]; then
             fi
             sleep 5
         done
-        sed -i "s/~MONGO_USER~/${MONGO_USER}/" /defaults/system.properties
+        if [ "$FERRETDB" == "sqlite" ]; then
+            MONGO_CREDENTIALS="" # No creds
+        else
+            MONGO_CREDENTIALS="$MONGO_USER:$MONGO_PASS@" # Ferret postgres or Mongo
+        fi
+        sed -i "s/~MONGO_CREDENTIALS~/${MONGO_CREDENTIALS}/" /defaults/system.properties
+
         sed -i "s/~MONGO_HOST~/${MONGO_HOST}/" /defaults/system.properties
         sed -i "s/~MONGO_PORT~/${MONGO_PORT}/" /defaults/system.properties
         sed -i "s/~MONGO_DBNAME~/${MONGO_DBNAME}/" /defaults/system.properties
-        sed -i "s/~MONGO_PASS~/${MONGO_PASS}/" /defaults/system.properties
+        MONGO_ARGS="?tls="
         if [[ "${MONGO_TLS,,}" = "true" ]]; then
-            sed -i "s/~MONGO_TLS~/true/" /defaults/system.properties
+            MONGO_ARGS="${MONGO_ARGS}true"
         else
-            sed -i "s/~MONGO_TLS~/false/" /defaults/system.properties
+            MONGO_ARGS="${MONGO_ARGS}false"
         fi
-        if [[ -z "${MONGO_AUTHSOURCE}" ]]; then
-            sed -i "s/~MONGO_AUTHSOURCE~//" /defaults/system.properties
-        else
-            sed -i "s/~MONGO_AUTHSOURCE~/\&authSource=${MONGO_AUTHSOURCE}/" /defaults/system.properties
+        if [[ ! -z "${MONGO_AUTHSOURCE}" ]]; then
+            MONGO_ARGS="${MONGO_ARGS}&authSource=${MONGO_AUTHSOURCE}"
         fi
+        if [ "$FERRETDB" == "postgres"]; then
+            MONGO_ARGS="${MONGO_ARGS}&authType=PLAIN"
+        fi
+        sed -i "s/~MONGO_ARGS~/${MONGO_ARGS}" /defaults/system.properties
         cp /defaults/system.properties /config/data
     fi
 fi
