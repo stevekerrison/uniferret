@@ -1,0 +1,39 @@
+version: "3"
+services:
+  db:
+    image: ghcr.io/ferretdb/ferretdb:1.17.0
+    user: 1001:1001
+    volumes:
+      # You can use a directory-based volume here instead of a named one, if you prefer
+      - dbvol:/data/db
+    restart: unless-stopped
+    networks:
+      - internal
+  app:
+    image: uniferret:latest
+    environment:
+      - PUID=1001
+      - PGID=1001
+      - TZ=Asia/Singapore
+      - MONGO_USER=unifi
+      - FERRETDB=sqlite
+      - MONGO_HOST=unifi-db
+      - MONGO_PORT=27017
+      - MONGO_DBNAME=unifi_db
+    volumes:
+      - configvol:/config
+    restart: unless-stopped
+    networks:
+      servernet:
+        ipv4_address: 10.91.13.63
+      internal:
+
+networks:
+  servernet:
+    external: true
+    name: servernet
+  internal:
+
+volumes:
+  dbvol:
+  configvol:
