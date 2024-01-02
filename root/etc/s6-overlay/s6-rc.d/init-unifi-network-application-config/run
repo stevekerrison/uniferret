@@ -56,10 +56,10 @@ if [[ ! -e /config/data/system.properties ]]; then
         if [[ ! -z "${MONGO_AUTHSOURCE}" ]]; then
             MONGO_ARGS="${MONGO_ARGS}&authSource=${MONGO_AUTHSOURCE}"
         fi
-        if [ "$FERRETDB" == "postgres"]; then
+        if [ "$FERRETDB" == "postgres" ]; then
             MONGO_ARGS="${MONGO_ARGS}&authType=PLAIN"
         fi
-        sed -i "s/~MONGO_ARGS~/${MONGO_ARGS}" /defaults/system.properties
+        sed -i "s/~MONGO_ARGS~/${MONGO_ARGS}/" /defaults/system.properties
         cp /defaults/system.properties /config/data
     fi
 fi

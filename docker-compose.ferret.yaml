@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     networks:
       servernet:
-        ipv4_address: 10.91.13.63
+        ipv4_address: IP_HERE
       internal:
 
 networks:
@@ -35,5 +35,7 @@ networks:
   internal:
 
 volumes:
-  dbvol:
-  configvol:
+  uniferret_dbvol:
+    external: true
+  uniferret_configvol:
+    external: true
