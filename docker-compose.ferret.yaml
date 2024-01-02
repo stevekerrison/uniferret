@@ -1,11 +1,14 @@
 version: "3"
+environment:
 services:
   db:
     image: ghcr.io/ferretdb/ferretdb:1.17.0
     user: 1001:1001
+    environment:
+      - FERRETDB_HANDLER=sqlite
     volumes:
       # You can use a directory-based volume here instead of a named one, if you prefer
-      - dbvol:/data/db
+      - dbvol:/state
     restart: unless-stopped
     networks:
       - internal
@@ -15,9 +18,8 @@ services:
       - PUID=1001
       - PGID=1001
       - TZ=Asia/Singapore
-      - MONGO_USER=unifi
-      - FERRETDB=sqlite
-      - MONGO_HOST=unifi-db
+      - FERRETDB_HANDLER=sqlite
+      - MONGO_HOST=db
       - MONGO_PORT=27017
       - MONGO_DBNAME=unifi_db
     volumes:
