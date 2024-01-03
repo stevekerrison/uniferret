@@ -1,0 +1,46 @@
+version: "3"
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=username
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=unifi
+    volumes:
+      - ./pgdb:/var/lib/postgresql/data
+      - ./postgres.init.sh:/docker-entrypoint-initdb.d/postgres.init.sh:ro
+    networks:
+      - back 
+  ferret:
+    image: ghcr.io/ferretdb/ferretdb:1.17.0
+    user: 1001:1001
+    environment:
+      - FERRETDB_POSTGRESQL_URL=postgres://username:password@db:5432/unifi
+    restart: unless-stopped
+    networks:
+      - back
+      - front
+  app:
+    image: uniferret:latest
+    environment:
+      - PUID=1001
+      - PGID=1001
+      - TZ=Asia/Singapore
+      - FERRETDB_HANDLER=postgres
+      - MONGO_HOST=ferret
+      - MONGO_PORT=27017
+      - MONGO_DBNAME=unifi
+    volumes:
+      - ./unifi_config:/config
+    restart: unless-stopped
+    networks:
+      servernet:
+        ipv4_address: IP_HERE
+      front:
+
+networks:
+  servernet:
+    external: true
+    name: servernet
+  front:
+  back:
