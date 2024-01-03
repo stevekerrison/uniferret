@@ -47,17 +47,17 @@ if [[ ! -e /config/data/system.properties ]]; then
         sed -i "s/~MONGO_HOST~/${MONGO_HOST}/" /defaults/system.properties
         sed -i "s/~MONGO_PORT~/${MONGO_PORT}/" /defaults/system.properties
         sed -i "s/~MONGO_DBNAME~/${MONGO_DBNAME}/" /defaults/system.properties
-        MONGO_ARGS="?tls="
+        MONGO_ARGS="\\?tls="
         if [[ "${MONGO_TLS,,}" = "true" ]]; then
             MONGO_ARGS="${MONGO_ARGS}true"
         else
             MONGO_ARGS="${MONGO_ARGS}false"
         fi
         if [[ ! -z "${MONGO_AUTHSOURCE}" ]]; then
-            MONGO_ARGS="${MONGO_ARGS}&authSource=${MONGO_AUTHSOURCE}"
+            MONGO_ARGS="${MONGO_ARGS}\\&authSource=${MONGO_AUTHSOURCE}"
         fi
         if [ "$FERRETDB_HANDLER" == "postgres" ]; then
-            MONGO_ARGS="${MONGO_ARGS}&authMechanism=PLAIN"
+            MONGO_ARGS="${MONGO_ARGS}\\&authMechanism=PLAIN"
         fi
         sed -i "s/~MONGO_ARGS~/${MONGO_ARGS}/" /defaults/system.properties
         cp /defaults/system.properties /config/data
