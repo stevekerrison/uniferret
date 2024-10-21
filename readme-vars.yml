@@ -12,14 +12,11 @@ available_architectures:
   - { arch: "{{ arch_x86_64 }}", tag: "amd64-latest"}
   - { arch: "{{ arch_arm64 }}", tag: "arm64v8-latest"}
 
-# development version
-development_versions: false
-
 # container parameters
 param_container_name: "{{ project_name }}"
 param_usage_include_vols: true
 param_volumes:
-  - { vol_path: "/config", vol_host_path: "/path/to/data", desc: "All Unifi data stored here" }
+  - { vol_path: "/config", vol_host_path: "/path/to/{{ project_name }}/data", desc: "Persistent config files" }
 
 param_usage_include_ports: true
 param_ports:
@@ -35,6 +32,7 @@ param_env_vars:
   - { env_var: "MONGO_HOST", env_value: "unifi-db", desc: "Mongodb Hostname. Only evaluated on first run." }
   - { env_var: "MONGO_PORT", env_value: "27017", desc: "Mongodb Port. Only evaluated on first run." }
   - { env_var: "MONGO_DBNAME", env_value: "unifi", desc: "Mongodb Database Name (stats DB is automatically suffixed with `_stat`). Only evaluated on first run." }
+  - { env_var: "MONGO_AUTHSOURCE", env_value: "admin", desc: "Mongodb [authSource](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.authSource). For Atlas set to `admin`. Only evaluated on first run." }
 
 # optional container parameters
 opt_param_usage_include_env: true
@@ -42,7 +40,6 @@ opt_param_env_vars:
   - { env_var: "MEM_LIMIT", env_value: "1024", desc: "Optionally change the Java memory limit (in Megabytes). Set to `default` to reset to default" }
   - { env_var: "MEM_STARTUP", env_value: "1024", desc: "Optionally change the Java initial/minimum memory (in Megabytes). Set to `default` to reset to default" }
   - { env_var: "MONGO_TLS", env_value: "", desc: "Mongodb enable [TLS](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.tls). Only evaluated on first run." }
-  - { env_var: "MONGO_AUTHSOURCE", env_value: "", desc: "Mongodb [authSource](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.authSource). For Atlas set to `admin`.Defaults to `MONGO_DBNAME`.Only evaluated on first run." }
 
 opt_param_usage_include_ports: true
 opt_param_ports:
@@ -61,43 +58,67 @@ app_setup_block: |
 
   ### Setting Up Your External Database
 
-  Formally only mongodb 3.6 through 4.4 are supported, however, it has been reported that newer versions will work. If you choose to use a newer version be aware that you will not be operating a supported configuration.
+  Starting with version 8.1 of Unifi Network Application, mongodb 3.6 through 7.0 are supported.
 
   **Make sure you pin your database image version and do not use `latest`, as mongodb does not support automatic upgrades between major versions.**
 
-  If you are using the [official mongodb container](https://hub.docker.com/_/mongo/), you can create your user using an `init-mongo.js` file with the following contents:
+  **MongoDB >4.4 on X86_64 Hardware needs a CPU with AVX support. Some lower end Intel CPU models like Celeron and Pentium (before Tiger-Lake) more Details: [Advanced Vector Extensions - Wikipedia](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX) don't support AVX, but you can still use MongoDB 4.4.**
 
-  ```js
-  db.getSiblingDB("MONGO_DBNAME").createUser({user: "MONGO_USER", pwd: "MONGO_PASS", roles: [{role: "dbOwner", db: "MONGO_DBNAME"}]});
-  db.getSiblingDB("MONGO_DBNAME_stat").createUser({user: "MONGO_USER", pwd: "MONGO_PASS", roles: [{role: "dbOwner", db: "MONGO_DBNAME_stat"}]});
+  If you are using the [official mongodb container](https://hub.docker.com/_/mongo/), you can create your user using an `init-mongo.sh` file with the following contents (do not modify; copy/paste as is):
+
+  ```sh
+  #!/bin/bash
+
+  if which mongosh > /dev/null 2>&1; then
+    mongo_init_bin='mongosh'
+  else
+    mongo_init_bin='mongo'
+  fi
+  "${mongo_init_bin}" <<EOF
+  use ${MONGO_AUTHSOURCE}
+  db.auth("${MONGO_INITDB_ROOT_USERNAME}", "${MONGO_INITDB_ROOT_PASSWORD}")
+  db.createUser({
+    user: "${MONGO_USER}",
+    pwd: "${MONGO_PASS}",
+    roles: [
+      { db: "${MONGO_DBNAME}", role: "dbOwner" },
+      { db: "${MONGO_DBNAME}_stat", role: "dbOwner" }
+    ]
+  })
+  EOF
   ```
 
-  Being sure to replace the placeholders with the same values you supplied to the Unifi container, and mount it into your *mongodb* container.
+  Mount the sh file into your *mongodb* container, and make sure to set the env vars below with the same values you supplied to the Unifi container.
 
   For example:
+    ```yaml
+      unifi-db:
+        image: docker.io/mongo:<version tag>
+        container_name: unifi-db
+        environment:
+          - MONGO_INITDB_ROOT_USERNAME=root
+          - MONGO_INITDB_ROOT_PASSWORD=
+          - MONGO_USER=unifi
+          - MONGO_PASS=
+          - MONGO_DBNAME=unifi
+          - MONGO_AUTHSOURCE=admin
+        volumes:
+          - /path/to/data:/data/db
+          - /path/to/init-mongo.sh:/docker-entrypoint-initdb.d/init-mongo.sh:ro
+        restart: unless-stopped
+    ```
 
-  ```yaml
-    unifi-db:
-      image: docker.io/mongo:<version tag>
-      container_name: unifi-db
-      volumes:
-        - /path/to/data:/data/db
-        - /path/to/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
-      restart: unless-stopped
-  ```
 
-  *Note that the init script method will only work on first run. If you start the mongodb container without an init script it will generate test data automatically and you will have to manually create your databases, or restart with a clean `/data/db` volume and an init script mounted.*
-
-  *If you are using the init script method do not also set `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, or any other "INITDB" values as they will cause conflicts.*
+  *Note that the init script method will only work on first run. If you start the Mongodb container without an init script it will generate test data automatically and you will have to manually create your databases, or restart with a clean `/data/db` volume and an init script mounted.*
 
   You can also run the commands directly against the database using either `mongo` (< 6.0) or `mongosh` (>= 6.0).
 
   ### Device Adoption
 
   For Unifi to adopt other devices, e.g. an Access Point, it is required to change the inform IP address. Because Unifi runs inside Docker by default it uses an IP address not accessible by other devices. To change this go to Settings > System > Advanced and set the Inform Host to a hostname or IP address accessible by your devices. Additionally the checkbox "Override" has to be checked, so that devices can connect to the controller during adoption (devices use the inform-endpoint during adoption).
-  
+
   Note that you must use 8080:8080. If you MUST change the port, it must be changed on both sides and manually changed in your system.properties file. Otherwise, devices will initially communicate and then break after.
-  
+
   **Please note, Unifi change the location of this option every few releases so if it's not where it says, search for "Inform" or "Inform Host" in the settings.**
 
   In order to manually adopt a device take these steps:
@@ -123,5 +144,8 @@ app_setup_block: |
 
 # changelog
 changelogs:
+  - { date: "11.08.24:", desc: "**Important**: The mongodb init instructions have been updated to enable auth ([RBAC](https://www.mongodb.com/docs/manual/core/authorization/#role-based-access-control)). We have been notified that if RBAC is not enabled, the official mongodb container allows remote access to the db contents over port 27017 without credentials. If you set up the mongodb container with the old instructions we provided, you should not map or expose port 27017. If you would like to enable auth, the easiest way is to create new instances of both unifi and mongodb with the new instructions and restore unifi from a backup." }
+  - { date: "11.08.24:", desc: "Rebase to Ubuntu Noble." }
+  - { date: "04.03.24:", desc: "Install from zip package instead of deb." }
   - { date: "17.10.23:", desc: "Add environment variables for TLS and authSource to support Atlas and new MongoDB versions." }
   - { date: "05.09.23:", desc: "Initial release." }

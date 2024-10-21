@@ -28,7 +28,7 @@ Find us at:
 
 # [linuxserver/unifi-network-application](https://github.com/linuxserver/docker-unifi-network-application)
 
-[![Scarf.io pulls](https://scarf.sh/installs-badge/linuxserver-ci/linuxserver%2Funifi-network-application?color=94398d&label-color=555555&logo-color=ffffff&style=for-the-badge&package-type=docker)](https://scarf.sh/gateway/linuxserver-ci/docker/linuxserver%2Funifi-network-application)
+[![Scarf.io pulls](https://scarf.sh/installs-badge/linuxserver-ci/linuxserver%2Funifi-network-application?color=94398d&label-color=555555&logo-color=ffffff&style=for-the-badge&package-type=docker)](https://scarf.sh)
 [![GitHub Stars](https://img.shields.io/github/stars/linuxserver/docker-unifi-network-application.svg?color=94398d&labelColor=555555&logoColor=ffffff&style=for-the-badge&logo=github)](https://github.com/linuxserver/docker-unifi-network-application)
 [![GitHub Release](https://img.shields.io/github/release/linuxserver/docker-unifi-network-application.svg?color=94398d&labelColor=555555&logoColor=ffffff&style=for-the-badge&logo=github)](https://github.com/linuxserver/docker-unifi-network-application/releases)
 [![GitHub Package Repository](https://img.shields.io/static/v1.svg?color=94398d&labelColor=555555&logoColor=ffffff&style=for-the-badge&label=linuxserver.io&message=GitHub%20Package&logo=github)](https://github.com/linuxserver/docker-unifi-network-application/packages)
@@ -64,34 +64,58 @@ After setup, the web UI is available at https://ip:8443. The application can be 
 
 ### Setting Up Your External Database
 
-Formally only mongodb 3.6 through 4.4 are supported, however, it has been reported that newer versions will work. If you choose to use a newer version be aware that you will not be operating a supported configuration.
+Starting with version 8.1 of Unifi Network Application, mongodb 3.6 through 7.0 are supported.
 
 **Make sure you pin your database image version and do not use `latest`, as mongodb does not support automatic upgrades between major versions.**
 
-If you are using the [official mongodb container](https://hub.docker.com/_/mongo/), you can create your user using an `init-mongo.js` file with the following contents:
+**MongoDB >4.4 on X86_64 Hardware needs a CPU with AVX support. Some lower end Intel CPU models like Celeron and Pentium (before Tiger-Lake) more Details: [Advanced Vector Extensions - Wikipedia](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX) don't support AVX, but you can still use MongoDB 4.4.**
 
-```js
-db.getSiblingDB("MONGO_DBNAME").createUser({user: "MONGO_USER", pwd: "MONGO_PASS", roles: [{role: "dbOwner", db: "MONGO_DBNAME"}]});
-db.getSiblingDB("MONGO_DBNAME_stat").createUser({user: "MONGO_USER", pwd: "MONGO_PASS", roles: [{role: "dbOwner", db: "MONGO_DBNAME_stat"}]});
+If you are using the [official mongodb container](https://hub.docker.com/_/mongo/), you can create your user using an `init-mongo.sh` file with the following contents (do not modify; copy/paste as is):
+
+```sh
+#!/bin/bash
+
+if which mongosh > /dev/null 2>&1; then
+  mongo_init_bin='mongosh'
+else
+  mongo_init_bin='mongo'
+fi
+"${mongo_init_bin}" <<EOF
+use ${MONGO_AUTHSOURCE}
+db.auth("${MONGO_INITDB_ROOT_USERNAME}", "${MONGO_INITDB_ROOT_PASSWORD}")
+db.createUser({
+  user: "${MONGO_USER}",
+  pwd: "${MONGO_PASS}",
+  roles: [
+    { db: "${MONGO_DBNAME}", role: "dbOwner" },
+    { db: "${MONGO_DBNAME}_stat", role: "dbOwner" }
+  ]
+})
+EOF
 ```
 
-Being sure to replace the placeholders with the same values you supplied to the Unifi container, and mount it into your *mongodb* container.
+Mount the sh file into your *mongodb* container, and make sure to set the env vars below with the same values you supplied to the Unifi container.
 
 For example:
+  ```yaml
+    unifi-db:
+      image: docker.io/mongo:<version tag>
+      container_name: unifi-db
+      environment:
+        - MONGO_INITDB_ROOT_USERNAME=root
+        - MONGO_INITDB_ROOT_PASSWORD=
+        - MONGO_USER=unifi
+        - MONGO_PASS=
+        - MONGO_DBNAME=unifi
+        - MONGO_AUTHSOURCE=admin
+      volumes:
+        - /path/to/data:/data/db
+        - /path/to/init-mongo.sh:/docker-entrypoint-initdb.d/init-mongo.sh:ro
+      restart: unless-stopped
+  ```
 
-```yaml
-  unifi-db:
-    image: docker.io/mongo:<version tag>
-    container_name: unifi-db
-    volumes:
-      - /path/to/data:/data/db
-      - /path/to/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
-    restart: unless-stopped
-```
 
-*Note that the init script method will only work on first run. If you start the mongodb container without an init script it will generate test data automatically and you will have to manually create your databases, or restart with a clean `/data/db` volume and an init script mounted.*
-
-*If you are using the init script method do not also set `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, or any other "INITDB" values as they will cause conflicts.*
+*Note that the init script method will only work on first run. If you start the Mongodb container without an init script it will generate test data automatically and you will have to manually create your databases, or restart with a clean `/data/db` volume and an init script mounted.*
 
 You can also run the commands directly against the database using either `mongo` (< 6.0) or `mongosh` (>= 6.0).
 
@@ -137,7 +161,6 @@ To help you get started creating a container from this image you can either use 
 
 ```yaml
 ---
-version: "2.1"
 services:
   unifi-network-application:
     image: lscr.io/linuxserver/unifi-network-application:latest
@@ -151,12 +174,12 @@ services:
       - MONGO_HOST=unifi-db
       - MONGO_PORT=27017
       - MONGO_DBNAME=unifi
+      - MONGO_AUTHSOURCE=admin
       - MEM_LIMIT=1024 #optional
       - MEM_STARTUP=1024 #optional
       - MONGO_TLS= #optional
-      - MONGO_AUTHSOURCE= #optional
     volumes:
-      - /path/to/data:/config
+      - /path/to/unifi-network-application/data:/config
     ports:
       - 8443:8443
       - 3478:3478/udp
@@ -183,10 +206,10 @@ docker run -d \
   -e MONGO_HOST=unifi-db \
   -e MONGO_PORT=27017 \
   -e MONGO_DBNAME=unifi \
+  -e MONGO_AUTHSOURCE=admin \
   -e MEM_LIMIT=1024 `#optional` \
   -e MEM_STARTUP=1024 `#optional` \
   -e MONGO_TLS= `#optional` \
-  -e MONGO_AUTHSOURCE= `#optional` \
   -p 8443:8443 \
   -p 3478:3478/udp \
   -p 10001:10001/udp \
@@ -196,7 +219,7 @@ docker run -d \
   -p 8880:8880 `#optional` \
   -p 6789:6789 `#optional` \
   -p 5514:5514/udp `#optional` \
-  -v /path/to/data:/config \
+  -v /path/to/unifi-network-application/data:/config \
   --restart unless-stopped \
   lscr.io/linuxserver/unifi-network-application:latest
 ```
@@ -224,11 +247,11 @@ Containers are configured using parameters passed at runtime (such as those abov
 | `-e MONGO_HOST=unifi-db` | Mongodb Hostname. Only evaluated on first run. |
 | `-e MONGO_PORT=27017` | Mongodb Port. Only evaluated on first run. |
 | `-e MONGO_DBNAME=unifi` | Mongodb Database Name (stats DB is automatically suffixed with `_stat`). Only evaluated on first run. |
+| `-e MONGO_AUTHSOURCE=admin` | Mongodb [authSource](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.authSource). For Atlas set to `admin`. Only evaluated on first run. |
 | `-e MEM_LIMIT=1024` | Optionally change the Java memory limit (in Megabytes). Set to `default` to reset to default |
 | `-e MEM_STARTUP=1024` | Optionally change the Java initial/minimum memory (in Megabytes). Set to `default` to reset to default |
 | `-e MONGO_TLS=` | Mongodb enable [TLS](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.tls). Only evaluated on first run. |
-| `-e MONGO_AUTHSOURCE=` | Mongodb [authSource](https://www.mongodb.com/docs/manual/reference/connection-string/#mongodb-urioption-urioption.authSource). For Atlas set to `admin`.Defaults to `MONGO_DBNAME`.Only evaluated on first run. |
-| `-v /config` | All Unifi data stored here |
+| `-v /config` | Persistent config files |
 
 ## Environment variables from files (Docker secrets)
 
@@ -299,7 +322,7 @@ We publish various [Docker Mods](https://github.com/linuxserver/docker-mods) to 
 
 ## Updating Info
 
-Most of our images are static, versioned, and require an image update and container recreation to update the app inside. With some exceptions (ie. nextcloud, plex), we do not recommend or support updating apps inside the container. Please consult the [Application Setup](#application-setup) section above to see if it is recommended for the image.
+Most of our images are static, versioned, and require an image update and container recreation to update the app inside. With some exceptions (noted in the relevant readme.md), we do not recommend or support updating apps inside the container. Please consult the [Application Setup](#application-setup) section above to see if it is recommended for the image.
 
 Below are the instructions for updating containers:
 
@@ -364,24 +387,10 @@ Below are the instructions for updating containers:
     docker image prune
     ```
 
-### Via Watchtower auto-updater (only use if you don't remember the original parameters)
-
-* Pull the latest image at its tag and replace it with the same env variables in one run:
-
-    ```bash
-    docker run --rm \
-      -v /var/run/docker.sock:/var/run/docker.sock \
-      containrrr/watchtower \
-      --run-once unifi-network-application
-    ```
-
-* You can also remove the old dangling images: `docker image prune`
-
-**warning**: We do not endorse the use of Watchtower as a solution to automated updates of existing Docker containers. In fact we generally discourage automated updates. However, this is a useful tool for one-time manual updates of containers where you have forgotten the original parameters. In the long term, we highly recommend using [Docker Compose](https://docs.linuxserver.io/general/docker-compose).
-
 ### Image Update Notifications - Diun (Docker Image Update Notifier)
 
-**tip**: We recommend [Diun](https://crazymax.dev/diun/) for update notifications. Other tools that automatically update containers unattended are not recommended or supported.
+>[!TIP]
+>We recommend [Diun](https://crazymax.dev/diun/) for update notifications. Other tools that automatically update containers unattended are not recommended or supported.
 
 ## Building locally
 
@@ -406,5 +415,8 @@ Once registered you can define the dockerfile to use with `-f Dockerfile.aarch64
 
 ## Versions
 
+* **11.08.24:** - **Important**: The mongodb init instructions have been updated to enable auth ([RBAC](https://www.mongodb.com/docs/manual/core/authorization/#role-based-access-control)). We have been notified that if RBAC is not enabled, the official mongodb container allows remote access to the db contents over port 27017 without credentials. If you set up the mongodb container with the old instructions we provided, you should not map or expose port 27017. If you would like to enable auth, the easiest way is to create new instances of both unifi and mongodb with the new instructions and restore unifi from a backup.
+* **11.08.24:** - Rebase to Ubuntu Noble.
+* **04.03.24:** - Install from zip package instead of deb.
 * **17.10.23:** - Add environment variables for TLS and authSource to support Atlas and new MongoDB versions.
 * **05.09.23:** - Initial release.
